@@ -12,80 +12,78 @@ function extractClassName(javaCode) {
     throw new Error('Invalid Java code: public class not found.');
 }
 
-// A function to execute the code
 async function executeCode(language, code, stdin, expectedOutput) {
-    const tempDir = './temp'; // Temporary folder for storing files
-    await fs.mkdir(tempDir, { recursive: true });
+    const tempDir = './temp';
+    const uniqueDir = path.join(tempDir, uuidv4()); 
+    await fs.mkdir(uniqueDir, { recursive: true }); 
 
-    const filename = uuidv4();
     let extension = '';
     let compileCommand = '';
     let runCommand = '';
     let runArgs = [];
-    const filePath = path.join(tempDir, `${filename}`);
+    // for java
+    let className = ''; 
 
     switch (language) {
         case 'python':
             extension = '.py';
             runCommand = 'python3';
-            runArgs = [filePath + extension];
+            runArgs = [path.join(uniqueDir, `program${extension}`)];
             break;
         case 'cpp':
             extension = '.cpp';
             compileCommand = 'g++';
-            runCommand = path.join(tempDir, filename); // The compiled binary in temp dir
+            runCommand = path.join(uniqueDir, 'program'); // The compiled binary in temp dir
             runArgs = [];
             break;
         case 'java':
-            // Extract class name from the code
-            let className;
             try {
-                className = extractClassName(code);
+                className = extractClassName(code); // extract class name for Java
             } catch (err) {
+                await cleanupDir(uniqueDir);
                 return { success: false, actualOutput: '', expectedOutput, error: err.message };
             }
-            
             extension = '.java';
             compileCommand = 'javac';
             runCommand = 'java';
-            runArgs = ['-cp', tempDir, filename]; // Run the Java class from temp dir
+            runArgs = ['-cp', uniqueDir, className]; // run the Java class from temp dir
             break;
         default:
+            await cleanupDir(uniqueDir);
             throw new Error('Unsupported language');
     }
 
-    // Write code to the file
-    const sourceFilePath = filePath + extension;
+    // dump code to the file
+    const sourceFilePath = path.join(uniqueDir, `program${extension}`);
     await fs.writeFile(sourceFilePath, code);
 
-    // Compile (if required) and handle compilation errors
+    // compile (if required) and handle compilation errors
     if (language === 'cpp') {
-        // Compile C++ code into the temp directory
-        await compileCode(compileCommand, ['-o', path.join(tempDir, filename), sourceFilePath]);
-
-        // Set executable permissions for the binary
-        await fs.chmod(path.join(tempDir, filename), '755');
+        await compileCode(compileCommand, ['-o', path.join(uniqueDir, 'program'), sourceFilePath]);
+        await fs.chmod(path.join(uniqueDir, 'program'), '755'); // Set executable permission
     } else if (language === 'java') {
-        // Compile Java code into the temp directory
-        await compileCode(compileCommand, ['-d', tempDir, sourceFilePath]);
+        const javaFilePath = path.join(uniqueDir, `${className}${extension}`); // java file must match class name
+        await fs.rename(sourceFilePath, javaFilePath); // rename file to class name
+        await compileCode(compileCommand, ['-d', uniqueDir, javaFilePath]); // compile into temp dir
     }
 
-    // Run the program and capture output
-    const output = await runProgram(runCommand, runArgs, stdin);
-
-    // Compare output
-    const isCorrect = output.trim() === expectedOutput.trim();
-    await cleanupFiles(sourceFilePath, filePath); // Clean up temporary files
-
-    return {
-        success: isCorrect,
-        actualOutput: output,
-        expectedOutput,
-        error: !isCorrect ? `Output did not match` : null
-    };
+    // run the program and capture output
+    try {
+        const output = await runProgram(runCommand, runArgs, stdin);
+        const isCorrect = output.trim() === expectedOutput.trim();
+        await cleanupDir(uniqueDir); // clean up temporary directory
+        return {
+            success: isCorrect,
+            actualOutput: output,
+            expectedOutput,
+            error: !isCorrect ? `Output did not match` : null
+        };
+    } catch (err) {
+        await cleanupDir(uniqueDir); // clean up even if there's an error
+        return { success: false, actualOutput: '', expectedOutput, error: err.message };
+    }
 }
 
-// Helper function to run compilation commands
 function compileCode(command, args) {
     return new Promise((resolve, reject) => {
         const process = spawn(command, args);
@@ -104,7 +102,6 @@ function compileCode(command, args) {
     });
 }
 
-// Helper function to run the code and capture stdout and stderr
 function runProgram(command, args, stdin = '') {
     return new Promise((resolve, reject) => {
         const process = spawn(command, args);
@@ -133,14 +130,11 @@ function runProgram(command, args, stdin = '') {
     });
 }
 
-// Helper function to clean up temporary files
-async function cleanupFiles(...filePaths) {
-    for (const filePath of filePaths) {
-        try {
-            await fs.rm(filePath);
-        } catch (err) {
-            console.error(`Failed to delete file ${filePath}: ${err.message}`);
-        }
+async function cleanupDir(dirPath) {
+    try {
+        await fs.rm(dirPath, { recursive: true, force: true });
+    } catch (err) {
+        console.error(`Failed to delete directory ${dirPath}: ${err.message}`);
     }
 }
 
