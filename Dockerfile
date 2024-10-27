@@ -1,20 +1,25 @@
-FROM node:16
+FROM node:16-alpine
 
-RUN apt-get update && apt-get install -y \
+RUN apk update && apk add --no-cache \
     g++ \
-    openjdk-11-jdk \
+    openjdk11 \
     python3 \
-    python3-pip \
-    cxxtest \
+    py3-pip \
     curl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    unzip \
+    && mkdir /opt/cxxtest1 && mkdir cxxtest\
+    && curl -L -o /tmp/cxxtest.zip https://github.com/CxxTest/cxxtest/archive/refs/tags/4.4.zip \
+    && unzip /tmp/cxxtest.zip -d /opt/cxxtest1 \
+    && mv /opt/cxxtest1/cxxtest-4.4/ /opt/cxxtest/ \
+    && ln -sf /opt/cxxtest/cxxtest /usr/include/cxxtest \
+    && rm -rf /tmp/cxxtest.zip /opt/cxxtest1 \
+    && apk del unzip
 
 WORKDIR /usr/src/app
 
 COPY package*.json ./
 
-RUN npm install && pip3 install pytest
+RUN npm install && pip3 install --no-cache-dir pytest
 
 RUN mkdir lib
 
@@ -23,8 +28,8 @@ RUN curl -L -o lib/junit-4.13.2.jar https://repo1.maven.org/maven2/junit/junit/4
 
 COPY . .
 
-ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk-amd64
-ENV PATH $JAVA_HOME/bin:$PATH
+ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk
+ENV PATH=$JAVA_HOME/bin:/opt/cxxtest/bin:$PATH
 
 EXPOSE 3000
 
