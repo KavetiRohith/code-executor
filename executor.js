@@ -44,7 +44,7 @@ async function executeCode(language, code, stdin, expectedOutput, runTests = fal
             extension = '.java';
             compileCommand = 'javac';
             runCommand = 'java';
-            runArgs = ['-cp', uniqueDir + path.delimiter + path.join(__dirname, 'lib', 'junit-4.13.2.jar') + path.delimiter + path.join(__dirname, 'lib', 'hamcrest-core-1.3.jar'), className]; // Run the Java class from temp dir with JUnit
+            runArgs = ['-cp', uniqueDir, className];
             break;
         default:
             await cleanupDir(uniqueDir);
@@ -72,8 +72,10 @@ async function executeCode(language, code, stdin, expectedOutput, runTests = fal
             const javaFilePath = path.join(uniqueDir, `${className}${extension}`); // Java file must match class name
             await fs.rename(sourceFilePath, javaFilePath); // Rename file to class name
             console.log(`Java code renamed to ${javaFilePath}`);
-            await compileCode(compileCommand, ['-cp', path.join(__dirname, 'lib', 'junit-4.13.2.jar') + path.delimiter + path.join(__dirname, 'lib', 'hamcrest-core-1.3.jar'), javaFilePath], uniqueDir); // Compile into temp dir with JUnit
-            console.log('Java program compiled successfully');
+            if (!runTests) {
+                await compileCode(compileCommand, ['-d', uniqueDir, javaFilePath]);
+                console.log('Java program compiled successfully');
+            }
         }
 
         // if tests are to be run, handle test scripts
@@ -120,25 +122,19 @@ async function executeCode(language, code, stdin, expectedOutput, runTests = fal
             if (language.toLowerCase() === 'python') {
                 isCorrect = !output.includes('fail');
                 return {
-                    success: isCorrect,
                     actualOutput: output,
-                    expectedOutput: isCorrect ? 'All tests passed' : 'Some tests failed',
                     error: isCorrect ? null : 'Tests failed'
                 };
             } else if (language.toLowerCase() === 'cpp') {
                 isCorrect = !output.includes('Failed');
                 return {
-                    success: isCorrect,
                     actualOutput: output,
-                    expectedOutput: isCorrect ? 'All tests passed' : 'Some tests failed',
                     error: isCorrect ? null : 'Tests failed'
                 };
             } else if (language.toLowerCase() === 'java') {
                 isCorrect = !output.includes('failure')
                 return {
-                    success: isCorrect,
                     actualOutput: output,
-                    expectedOutput: isCorrect ? 'All tests passed' : 'Some tests failed',
                     error: isCorrect ? null : 'Tests failed'
                 };
             }
@@ -146,7 +142,6 @@ async function executeCode(language, code, stdin, expectedOutput, runTests = fal
             // compare output with expected output
             isCorrect = output.trim() === expectedOutput.trim();
             return {
-                success: isCorrect,
                 actualOutput: output,
                 expectedOutput,
                 error: isCorrect ? null : 'Output did not match expected output'
